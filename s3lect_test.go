@@ -290,6 +290,75 @@ func TestS3Elector(t *testing.T) {
 			t.Error("Default leader timeout should be set")
 		}
 	})
+
+	t.Run("InitialElectionUsesEmptyETag", func(t *testing.T) {
+		// Verify that the first election attempt uses PutIfMatch with empty ETag
+		// to ensure we don't overwrite an existing lockfile (race condition protection)
+
+		spyStorage := &SpyStorage{
+			MockStorage: NewMock(),
+		}
+
+		config := &ElectorConfig{
+			LockfilePath:     "race-check.json",
+			ServerID:         "race-instance",
+			ServerAddr:       "race-host:8443",
+			FrequentInterval: 100 * time.Millisecond,
+		}
+
+		elector, err := NewS3Elector(S3ElectorOptions{
+			Config:  config,
+			Storage: spyStorage,
+			Logger:  logger,
+		})
+		if err != nil {
+			t.Fatalf("Failed to create elector: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+
+		if err := elector.Start(ctx); err != nil {
+			t.Fatalf("Failed to start elector: %v", err)
+		}
+		defer func() { _ = elector.Stop() }()
+
+		if err := elector.WaitForLeadership(ctx); err != nil {
+			t.Fatalf("Failed to acquire leadership: %v", err)
+		}
+
+		// Stop the elector immediately to freeze the state and trigger resignation.
+		// This prevents the background loop from making heartbeat calls that would
+		// confuse our assertion below.
+		if err := elector.Stop(); err != nil {
+			t.Fatalf("Failed to stop elector: %v", err)
+		}
+
+		// Check calls
+		spyStorage.mu.Lock()
+		calls := append([]PutIfMatchCall(nil), spyStorage.putIfMatchCalls...) // Copy
+		spyStorage.mu.Unlock()
+
+		// We expect exactly 2 calls:
+		// 1. Acquire leadership (empty ETag)
+		// 2. Resign leadership (non-empty ETag)
+		if len(calls) != 2 {
+			t.Errorf("Expected exactly 2 PutIfMatch calls (acquire + resign), got %d: %+v", len(calls), calls)
+		} else {
+			// First call MUST be acquisition with empty ETag (the bug fix)
+			if calls[0].ETag != "" {
+				t.Errorf("First call (acquire) should have empty ETag, got %q", calls[0].ETag)
+			}
+			if calls[0].Key != config.LockfilePath {
+				t.Errorf("First call key mismatch: got %q, want %q", calls[0].Key, config.LockfilePath)
+			}
+
+			// Second call MUST be resignation with non-empty ETag
+			if calls[1].ETag == "" {
+				t.Error("Second call (resign) should have non-empty ETag")
+			}
+		}
+	})
 }
 
 func TestS3ElectorHooks(t *testing.T) {
