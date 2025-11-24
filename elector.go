@@ -23,6 +23,11 @@ type Elector interface {
 	// WaitForLeadership blocks until this instance becomes leader
 	WaitForLeadership(ctx context.Context) error
 
+	// WaitForNextElection blocks until an election cycle completes after the given timestamp
+	// If the timestamp is zero/empty, blocks until the first-ever election cycle completes
+	// Returns the leadership status after the election completes
+	WaitForNextElection(ctx context.Context, since time.Time) (*LeadershipStatus, error)
+
 	// LeaderID returns the current leader's identity
 	LeaderID() string
 

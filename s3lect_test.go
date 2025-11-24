@@ -541,3 +541,108 @@ func TestS3ElectorHooks(t *testing.T) {
 		}
 	})
 }
+
+func TestWaitForNextElection(t *testing.T) {
+	tempDir := filepath.Join(os.TempDir(), "s3lect-next-election-test")
+	defer func() {
+		_ = os.RemoveAll(tempDir)
+	}()
+
+	mockStorage, err := NewMockStorage(tempDir)
+	if err != nil {
+		t.Fatalf("Failed to create mock storage: %v", err)
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelDebug}))
+
+	t.Run("WaitZeroTimestamp", func(t *testing.T) {
+		if err := mockStorage.Cleanup(); err != nil {
+			t.Fatalf("Failed to cleanup storage: %v", err)
+		}
+
+		config := &ElectorConfig{
+			LockfilePath:     "test-locks/next-election-1.json",
+			ServerID:         "instance-1",
+			ServerAddr:       "test-instance-1:8443",
+			FrequentInterval: 100 * time.Millisecond,
+		}
+
+		elector, err := NewS3Elector(S3ElectorOptions{
+			Config:  config,
+			Storage: mockStorage,
+			Logger:  logger,
+		})
+		if err != nil {
+			t.Fatalf("Failed to create elector: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Start elector
+		if err := elector.Start(ctx); err != nil {
+			t.Fatalf("Failed to start elector: %v", err)
+		}
+		defer func() { _ = elector.Stop() }()
+
+		// Wait for first election (since zero time)
+		status, err := elector.WaitForNextElection(ctx, time.Time{})
+		if err != nil {
+			t.Fatalf("WaitForNextElection failed: %v", err)
+		}
+
+		if !status.IsLeader {
+			t.Error("Expected to be leader")
+		}
+	})
+
+	t.Run("WaitForNextTimestamp", func(t *testing.T) {
+		if err := mockStorage.Cleanup(); err != nil {
+			t.Fatalf("Failed to cleanup storage: %v", err)
+		}
+
+		config := &ElectorConfig{
+			LockfilePath:     "test-locks/next-election-2.json",
+			ServerID:         "instance-2",
+			ServerAddr:       "test-instance-2:8443",
+			FrequentInterval: 100 * time.Millisecond,
+		}
+
+		elector, err := NewS3Elector(S3ElectorOptions{
+			Config:  config,
+			Storage: mockStorage,
+			Logger:  logger,
+		})
+		if err != nil {
+			t.Fatalf("Failed to create elector: %v", err)
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		// Start elector
+		if err := elector.Start(ctx); err != nil {
+			t.Fatalf("Failed to start elector: %v", err)
+		}
+		defer func() { _ = elector.Stop() }()
+
+		// Wait for initial election first
+		if _, err := elector.WaitForNextElection(ctx, time.Time{}); err != nil {
+			t.Fatalf("Failed to wait for first election: %v", err)
+		}
+
+		// Capture current time
+		now := time.Now()
+
+		// Wait for the next election cycle that completes after 'now'.
+		// Since the election loop runs every 100ms, this should complete quickly.
+		status, err := elector.WaitForNextElection(ctx, now)
+		if err != nil {
+			t.Fatalf("WaitForNextElection failed: %v", err)
+		}
+
+		if !status.IsLeader {
+			t.Error("Expected to be leader")
+		}
+	})
+}

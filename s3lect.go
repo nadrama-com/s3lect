@@ -29,10 +29,12 @@ type S3Elector struct {
 	currentLeaderAddr string
 	lastLeaderSeen    time.Time
 	lastElectionTime  time.Time
+	lastCheckTime     time.Time
 	consecutiveFails  int
 	started           bool
 	done              chan struct{}
 	leadershipChan    chan bool
+	electionCycleDone chan struct{}
 }
 
 // LeaderRecord represents the leader information stored in S3
@@ -72,11 +74,12 @@ func NewS3Elector(opts S3ElectorOptions) (*S3Elector, error) {
 	}
 
 	return &S3Elector{
-		config:         opts.Config,
-		storage:        opts.Storage,
-		logger:         opts.Logger,
-		done:           make(chan struct{}),
-		leadershipChan: make(chan bool, 1),
+		config:            opts.Config,
+		storage:           opts.Storage,
+		logger:            opts.Logger,
+		done:              make(chan struct{}),
+		leadershipChan:    make(chan bool, 1),
+		electionCycleDone: make(chan struct{}),
 	}, nil
 }
 
@@ -145,6 +148,39 @@ func (e *S3Elector) WaitForLeadership(ctx context.Context) error {
 	}
 }
 
+// WaitForNextElection blocks until an election cycle completes after the given timestamp
+// If the timestamp is zero/empty, blocks until the first-ever election cycle completes
+// Returns the leadership status after the election completes
+func (e *S3Elector) WaitForNextElection(ctx context.Context, since time.Time) (*LeadershipStatus, error) {
+	// Get current state
+	e.mu.RLock()
+	lastCheck := e.lastCheckTime
+	cycleDone := e.electionCycleDone
+	e.mu.RUnlock()
+
+	// If we've already checked after 'since', return immediately
+	// Note: time.Time{}.After(since) is false unless since is negative, so we check IsZero explicitly for the "wait for first" case
+	if !lastCheck.IsZero() && lastCheck.After(since) {
+		return e.GetLeadershipStatus(), nil
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-cycleDone:
+			e.mu.RLock()
+			lastCheck = e.lastCheckTime
+			cycleDone = e.electionCycleDone
+			e.mu.RUnlock()
+
+			if !lastCheck.IsZero() && lastCheck.After(since) {
+				return e.GetLeadershipStatus(), nil
+			}
+		}
+	}
+}
+
 // LeaderID returns the current leader's identity
 func (e *S3Elector) LeaderID() string {
 	e.mu.RLock()
@@ -194,6 +230,17 @@ func (e *S3Elector) electionLoop(ctx context.Context) {
 
 // performElectionCycle performs one cycle of the election algorithm
 func (e *S3Elector) performElectionCycle(ctx context.Context) {
+	defer func() {
+		e.mu.Lock()
+		e.lastCheckTime = time.Now()
+		// Signal waiting routines
+		if e.electionCycleDone != nil {
+			close(e.electionCycleDone)
+			e.electionCycleDone = make(chan struct{})
+		}
+		e.mu.Unlock()
+	}()
+
 	lockKey := e.config.LockfilePath
 
 	e.mu.RLock()
