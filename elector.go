@@ -6,6 +6,7 @@ package s3lect
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -79,6 +80,9 @@ type ElectorConfig struct {
 	// PeerMode enables HTTP-based leader health checks to reduce S3 operations
 	PeerMode bool
 
+	// PeerHealthPath is the HTTP path for the peer leader health check endpoint (default: "/health/leadership")
+	PeerHealthPath string
+
 	// PeerTimeout is timeout for peer health check requests (default: 3s)
 	PeerTimeout time.Duration
 
@@ -115,6 +119,11 @@ func (c *ElectorConfig) Validate() error {
 	}
 	if c.LeaderTimeout == 0 {
 		c.LeaderTimeout = 15 * time.Second
+	}
+	if c.PeerHealthPath == "" {
+		c.PeerHealthPath = "/health/leadership"
+	} else if !strings.HasPrefix(c.PeerHealthPath, "/") {
+		c.PeerHealthPath = "/" + c.PeerHealthPath
 	}
 	if c.PeerTimeout == 0 {
 		c.PeerTimeout = 3 * time.Second

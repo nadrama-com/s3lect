@@ -594,7 +594,7 @@ func (e *S3Elector) performPeerHealthCheck(ctx context.Context, leaderAddress st
 	}
 
 	// Construct URL (assume HTTPS)
-	url := fmt.Sprintf("https://%s/health/leadership", leaderAddress)
+	url := fmt.Sprintf("https://%s%s", leaderAddress, e.config.PeerHealthPath)
 
 	// Create request with context
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)

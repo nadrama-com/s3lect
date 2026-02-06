@@ -10,7 +10,7 @@
 //     server.Start(ctx)
 //
 //  2. As an HTTP handler embedded in existing servers:
-//     mux.HandleFunc("/health/leadership", s3lect.NewLeadershipHandler(elector, logger))
+//     mux.HandleFunc(elector.GetConfig().PeerHealthPath, s3lect.NewLeadershipHandler(elector, logger))
 package s3lect
 
 import (
@@ -75,7 +75,8 @@ func NewHealthServer(config HealthServerConfig) (*HealthServer, error) {
 	}
 
 	// Register health endpoint using the reusable handler
-	mux.HandleFunc("/health/leadership", NewLeadershipHandler(config.Elector, config.Logger))
+	healthPath := config.Elector.GetConfig().PeerHealthPath
+	mux.HandleFunc(healthPath, NewLeadershipHandler(config.Elector, config.Logger))
 
 	// Create HTTPS server
 	hs.server = &http.Server{
@@ -138,7 +139,7 @@ func (hs *HealthServer) Stop(ctx context.Context) error {
 // Example:
 //
 //	mux := http.NewServeMux()
-//	mux.HandleFunc("/health/leadership", s3lect.NewLeadershipHandler(elector, logger))
+//	mux.HandleFunc(elector.GetConfig().PeerHealthPath, s3lect.NewLeadershipHandler(elector, logger))
 //	server := &http.Server{Handler: mux, ...}
 func NewLeadershipHandler(elector Elector, logger *slog.Logger) http.HandlerFunc {
 	if logger == nil {

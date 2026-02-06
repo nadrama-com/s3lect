@@ -73,7 +73,7 @@ e.g.
 
 When peer mode is enabled, followers in infrequent interval will:
 
-1. **Attempt peer health check**: HTTPS GET to `https://{leaderAddr}/health/leadership` using cached leader address
+1. **Attempt peer health check**: HTTPS GET to `https://{leaderAddr}{peerHealthPath}` using cached leader address (default peer health path: `/health/leadership`)
 2. **On success**: Use the leader data from peer response, skip S3 read entirely, continue infrequent polling  
 3. **On failure**: Fall back to S3 read to get current leader info, switch to frequent interval with direct S3 polling
 
@@ -103,6 +103,7 @@ S3lect is configured through the `ElectorConfig` structure:
 - **InfrequentInterval**: Polling interval during stable periods (default: 30s)  
 - **LeaderTimeout**: Time before considering leader failed (default: 15s)
 - **PeerMode**: Enable HTTP-based leader health checks (default: false)
+- **PeerHealthPath**: HTTP path for the peer leader health check endpoint (default: "/health/leadership")
 - **PeerTimeout**: Timeout for peer health check requests (default: 3s)
 
 ## Integration Requirements
