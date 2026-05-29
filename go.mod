@@ -1,3 +1,3 @@
-module github.com/nadrama-com/s3lect
+module github.com/podplane/s3lect
 
 go 1.23.1

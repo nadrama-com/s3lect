@@ -1,4 +1,5 @@
-// Copyright 2025 Nadrama Pty Ltd
+// S3lect <https://s3lect.dev>
+// Copyright The Podplane Authors
 // SPDX-License-Identifier: Apache-2.0
 
 // Package s3lect provides peer health server functionality for leader election.

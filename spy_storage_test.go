@@ -1,3 +1,7 @@
+// S3lect <https://s3lect.dev>
+// Copyright The Podplane Authors
+// SPDX-License-Identifier: Apache-2.0
+
 package s3lect
 
 import (
